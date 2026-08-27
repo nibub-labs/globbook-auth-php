@@ -22,6 +22,7 @@ final class GetUserInfoTest extends TestCase
         return new Client($config, $mockHttp, MockHttpClient::requestFactory(), MockHttpClient::streamFactory());
     }
 
+    /** @return array<string, mixed> */
     private static function fullUserInfoResponse(): array
     {
         return [
