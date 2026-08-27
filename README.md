@@ -146,6 +146,7 @@ new Config(
     string $clientSecret,
     string $redirectUrl,
     string $baseUrl = Config::DEFAULT_BASE_URL, // "https://globbook.com"
+    float $requestTimeoutSeconds = 10.0,
 )
 ```
 
@@ -155,6 +156,7 @@ new Config(
 | `$clientSecret`| `string` | Your app's client secret. **Server-side only** — see [Security](#security).                       |
 | `$redirectUrl` | `string` | Must exactly match the redirect URL registered for this app.                                      |
 | `$baseUrl`     | `string` | Globbook API origin. Defaults to `https://globbook.com`; override for staging/self-hosted setups. |
+| `$requestTimeoutSeconds` | `float` | Timeout for the **default** Guzzle-backed HTTP stack only — ignored if you supply your own PSR-18 client. Defaults to `10.0`; pass `0.0` to disable. |
 
 **Throws:** `\InvalidArgumentException` synchronously (in the constructor) if `clientId`,
 `clientSecret`, or `redirectUrl` is empty or blank — configuration errors fail immediately at
@@ -175,18 +177,29 @@ Pass all three PSR-18/PSR-17 arguments together to use your own HTTP stack (see
 [Using a custom HTTP client](#using-a-custom-http-client)), or omit all three to use the built-in
 Guzzle-backed default (requires `guzzlehttp/guzzle` to be installed).
 
-#### `getAuthorizationUrl(): string`
+#### `getAuthorizationUrl(array $scopes = [], ?string $state = null): string`
 
 Builds the URL to redirect the user's browser to for the Globbook-hosted consent screen. Pure URL
-construction — makes no network request.
+construction — makes no network request. Pass restricted scopes (`Scope::BIRTHDATE`,
+`Scope::GENDER`, `Scope::PHONE`, `Scope::ADDRESS`) to also request restricted claims — see
+[Restricted claims](#restricted-claims) below. Requesting a scope only has an effect if your app
+is verified in the Globbook Developer Console. Pass `$state` for CSRF protection — see
+[CSRF protection (state)](#csrf-protection-state) below.
+
+```php
+use Globbook\Auth\Scope;
+
+$url = $client->getAuthorizationUrl([Scope::BIRTHDATE, Scope::GENDER], $csrfToken);
+```
 
 #### `static parseCallbackParams(array $queryParams): CallbackParams`
 
-Extracts the `code` query parameter from a callback request. Pass `$_GET` directly, or any other
-framework's equivalent associative array (e.g. Symfony's `$request->query->all()`).
+Extracts the `code` (and `state`, if present) query parameters from a callback request. Pass
+`$_GET` directly, or any other framework's equivalent associative array (e.g. Symfony's
+`$request->query->all()`).
 
-Returns a `CallbackParams` with a single readonly property, `?string $code` (`null` if not
-present).
+Returns a `CallbackParams` with readonly properties `?string $code` and `?string $state`, both
+`null` if not present.
 
 #### `exchangeCodeForToken(?string $code): TokenResponse`
 
@@ -230,8 +243,53 @@ OIDC-style properties:
 | `$picture`            | `?string`       | Signed CDN avatar URL, or `null`.                                  |
 | `$coverImage`         | `?string`       | Signed CDN cover URL, or `null`.                                   |
 | `$website`            | `string`        | Website URL, `''` if unset.                                       |
-| `$birthdate`          | `string`        | `YYYY-MM-DD`, or `''` if unset.                                    |
-| `$gender`             | `string`        | Gender, `''` if unset.                                             |
+| `$birthdate`          | `?string`       | Restricted claim, `YYYY-MM-DD`. See [Restricted claims](#restricted-claims). |
+| `$gender`             | `?string`       | Restricted claim. See [Restricted claims](#restricted-claims).    |
+| `$phoneNumber`        | `?string`       | Restricted claim. See [Restricted claims](#restricted-claims).    |
+| `$address`            | `?string`       | Restricted claim, `"city country"`. See [Restricted claims](#restricted-claims). |
+
+### Restricted claims
+
+`birthdate`, `gender`, `phoneNumber`, and `address` are gated separately from the rest of the
+profile. Globbook only populates them — the property is `null` otherwise — when **both** are
+true:
+
+1. Your app has been verified in the Globbook Developer Console.
+2. You requested the matching scope via `getAuthorizationUrl()`'s `$scopes` argument (see
+   `Globbook\Auth\Scope`), **and** the signed-in user granted it on the consent screen —
+   requesting a scope is not the same as receiving it; the user can uncheck any scope
+   individually.
+
+An unverified app never receives these fields, regardless of what scopes it requests or what the
+user approves. Always check for `null` before use.
+
+### CSRF protection (state)
+
+Pass `$state` to `getAuthorizationUrl()` to protect against login CSRF (RFC 6749 §10.12): an
+attacker who obtains their own valid authorization code could otherwise trick a victim's browser
+into completing the attacker's login on the victim's session.
+
+```php
+// Before redirecting — generate an unguessable value and store it (session, signed cookie) tied
+// to the current browser session.
+$csrfToken = bin2hex(random_bytes(32));
+$_SESSION['oauth_state'] = $csrfToken;
+
+header('Location: ' . $client->getAuthorizationUrl(state: $csrfToken));
+exit;
+
+// In your callback route — compare before exchanging the code.
+$params = Client::parseCallbackParams($_GET);
+if ($params->code === null || $params->state !== ($_SESSION['oauth_state'] ?? null)) {
+    http_response_code(400);
+    echo 'Invalid or missing state — possible CSRF.';
+    exit;
+}
+```
+
+`$state` is entirely optional and Globbook never interprets it — it's echoed back unchanged, per
+the RFC 6749 `state` parameter. Omitting it does not change any other behavior; this is opt-in
+hardening, not a required step.
 
 ### `Globbook\Auth\GlobbookAuthException`
 

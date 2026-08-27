@@ -91,7 +91,7 @@ final class Client
             return;
         }
 
-        [$defaultClient, $defaultRequestFactory, $defaultStreamFactory] = self::createDefaultHttpStack();
+        [$defaultClient, $defaultRequestFactory, $defaultStreamFactory] = $this->createDefaultHttpStack();
 
         $this->httpClient = $httpClient ?? $defaultClient;
         $this->requestFactory = $requestFactory ?? $defaultRequestFactory;
@@ -107,27 +107,54 @@ final class Client
      * After the user approves, Globbook redirects back to the `redirectUrl` this client was
      * configured with, appending `?code=...`.
      *
+     * @param list<string> $scopes Restricted scopes to request in addition to the base profile
+     *                              — see {@see Scope} for the valid values (`Scope::BIRTHDATE`,
+     *                              `Scope::GENDER`, `Scope::PHONE`, `Scope::ADDRESS`). Rendered
+     *                              as a space-delimited `scope` query parameter. Requesting a
+     *                              scope only has an effect if this app is verified in the
+     *                              Globbook Developer Console — Globbook's consent screen never
+     *                              offers restricted scopes to an unverified app, and
+     *                              {@see Client::getUserInfo()} never returns them either way
+     *                              unless the user actually grants them at consent time. Pass an
+     *                              empty array (the default) for the base profile only.
+     * @param string|null   $state  An opaque value you generate before redirecting the user here
+     *                              — Globbook echoes it back unchanged in the `state` query
+     *                              parameter on the redirect to your `redirectUrl`, so
+     *                              {@see Client::parseCallbackParams()} can hand it back to you to
+     *                              compare against what you stored before the redirect (RFC 6749
+     *                              §10.12 CSRF protection). Globbook never interprets this value
+     *                              itself. Optional; omit (`null`) to skip CSRF protection.
+     *
      * @return string The full authorization URL, e.g.
      *                 `https://globbook.com/api/v2/oauth/authorize?client_id=...`.
      */
-    public function getAuthorizationUrl(): string
+    public function getAuthorizationUrl(array $scopes = [], ?string $state = null): string
     {
-        $query = http_build_query(['client_id' => $this->config->clientId]);
+        $params = ['client_id' => $this->config->clientId];
+        if ($scopes !== []) {
+            $params['scope'] = implode(' ', $scopes);
+        }
+        if ($state !== null && $state !== '') {
+            $params['state'] = $state;
+        }
 
-        return $this->config->baseUrl . '/api/v2/oauth/authorize?' . $query;
+        return $this->config->baseUrl . '/api/v2/oauth/authorize?' . http_build_query($params);
     }
 
     /**
-     * Parses the `code` query parameter out of the callback request your app receives after the
-     * user approves consent. Framework-agnostic — accepts any associative array of query
-     * parameters, so it works directly with PHP's own `$_GET`, or with any framework's parsed
-     * query-parameter bag (e.g. Symfony's `$request->query->all()`, a PSR-7 `UriInterface`'s
-     * query string run through `parse_str()`).
+     * Parses the `code` (and `state`, if present) query parameters out of the callback request
+     * your app receives after the user approves consent. Framework-agnostic — accepts any
+     * associative array of query parameters, so it works directly with PHP's own `$_GET`, or with
+     * any framework's parsed query-parameter bag (e.g. Symfony's `$request->query->all()`, a
+     * PSR-7 `UriInterface`'s query string run through `parse_str()`).
      *
      * @param array<string, mixed> $queryParams Typically `$_GET`, or an equivalent
      *                                            associative array of query parameters.
      *
-     * @return CallbackParams `code` is `null` if it was not present.
+     * @return CallbackParams `code`/`state` are `null` if not present. If you passed `$state` to
+     *                         {@see Client::getAuthorizationUrl()}, compare the returned `state`
+     *                         against what you stored before redirecting and reject the callback
+     *                         on a mismatch — see the README's "CSRF protection (state)" section.
      *
      * @example
      * ```php
@@ -143,7 +170,10 @@ final class Client
         $code = $queryParams['code'] ?? null;
         $codeValue = ($code !== null && $code !== '') ? (string) $code : null;
 
-        return new CallbackParams($codeValue);
+        $state = $queryParams['state'] ?? null;
+        $stateValue = ($state !== null && $state !== '') ? (string) $state : null;
+
+        return new CallbackParams($codeValue, $stateValue);
     }
 
     /**
@@ -290,13 +320,15 @@ final class Client
 
     /**
      * Constructs a default PSR-18/PSR-17 HTTP stack backed by Guzzle, used when the caller does
-     * not supply their own PSR-18 client. Requires `guzzlehttp/guzzle` to be installed.
+     * not supply their own PSR-18 client. Requires `guzzlehttp/guzzle` to be installed. The
+     * Guzzle client is configured with `Config::$requestTimeoutSeconds` — this only applies to
+     * this built-in default; a caller-supplied PSR-18 client controls its own timeout.
      *
      * @return array{0: ClientInterface, 1: RequestFactoryInterface, 2: StreamFactoryInterface}
      *
      * @throws \RuntimeException if `guzzlehttp/guzzle` is not installed.
      */
-    private static function createDefaultHttpStack(): array
+    private function createDefaultHttpStack(): array
     {
         if (!class_exists(\GuzzleHttp\Client::class) || !class_exists(\GuzzleHttp\Psr7\HttpFactory::class)) {
             throw new \RuntimeException(
@@ -307,7 +339,9 @@ final class Client
             );
         }
 
-        $guzzleClient = new \GuzzleHttp\Client();
+        $guzzleClient = new \GuzzleHttp\Client([
+            'timeout' => max(0.0, $this->config->requestTimeoutSeconds),
+        ]);
         $factory = new \GuzzleHttp\Psr7\HttpFactory();
 
         return [$guzzleClient, $factory, $factory];

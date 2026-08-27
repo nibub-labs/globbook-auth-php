@@ -42,6 +42,13 @@ final class Config
      * @param string $baseUrl      Base URL of the Globbook API. Defaults to
      *                              {@see Config::DEFAULT_BASE_URL}. Override this to point at a
      *                              staging/self-hosted environment.
+     * @param float  $requestTimeoutSeconds Timeout applied to every request made by the
+     *                              *default* Guzzle-backed HTTP stack (used only when you don't
+     *                              supply your own PSR-18 client to the {@see Client}
+     *                              constructor — if you do, configure timeouts on that client
+     *                              instead, this value is ignored). Defaults to 10 seconds so a
+     *                              slow or unresponsive Globbook endpoint can't hang your
+     *                              request indefinitely. Pass `0.0` to disable.
      *
      * @throws \InvalidArgumentException if `clientId`, `clientSecret`, or `redirectUrl` is
      *                                    empty/blank.
@@ -51,6 +58,7 @@ final class Config
         public readonly string $clientSecret,
         public readonly string $redirectUrl,
         string $baseUrl = self::DEFAULT_BASE_URL,
+        public readonly float $requestTimeoutSeconds = 10.0,
     ) {
         self::assertNonEmpty($clientId, 'clientId');
         self::assertNonEmpty($clientSecret, 'clientSecret');

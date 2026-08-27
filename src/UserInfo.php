@@ -28,8 +28,18 @@ final class UserInfo
      * @param string|null $coverImage        Signed CDN URL, or `null` if the user has no cover
      *                                         image.
      * @param string      $website           The user's website URL, or `''` if unset.
-     * @param string      $birthdate         `YYYY-MM-DD`, or `''` if unset.
-     * @param string      $gender            The user's gender, or `''` if unset.
+     * @param string|null $birthdate         Restricted claim, `YYYY-MM-DD`. `null` unless your
+     *                                         app is verified in the Globbook Developer Console
+     *                                         AND the user granted the `birthdate` scope at
+     *                                         consent time — see {@see Client::getAuthorizationUrl()}.
+     * @param string|null $gender            Restricted claim, the user's gender. Same
+     *                                         verified+granted-scope gating as `$birthdate`
+     *                                         (scope `gender`).
+     * @param string|null $phoneNumber       Restricted claim, the user's phone number. Same
+     *                                         gating as `$birthdate` (scope `phone`).
+     * @param string|null $address           Restricted claim, `"city country"` — this platform
+     *                                         stores no street-level address. Same gating as
+     *                                         `$birthdate` (scope `address`).
      */
     public function __construct(
         public readonly string $sub,
@@ -43,8 +53,10 @@ final class UserInfo
         public readonly ?string $picture,
         public readonly ?string $coverImage,
         public readonly string $website,
-        public readonly string $birthdate,
-        public readonly string $gender,
+        public readonly ?string $birthdate = null,
+        public readonly ?string $gender = null,
+        public readonly ?string $phoneNumber = null,
+        public readonly ?string $address = null,
     ) {
     }
 
@@ -68,8 +80,13 @@ final class UserInfo
             picture: isset($raw['picture']) ? (string) $raw['picture'] : null,
             coverImage: isset($raw['cover_image']) ? (string) $raw['cover_image'] : null,
             website: (string) ($raw['website'] ?? ''),
-            birthdate: (string) ($raw['birthdate'] ?? ''),
-            gender: (string) ($raw['gender'] ?? ''),
+            // Restricted claims are omitted from the response entirely (not sent as empty
+            // strings) unless the app is verified and the user granted the matching scope —
+            // preserve that as null rather than coercing a missing key to "".
+            birthdate: isset($raw['birthdate']) ? (string) $raw['birthdate'] : null,
+            gender: isset($raw['gender']) ? (string) $raw['gender'] : null,
+            phoneNumber: isset($raw['phone_number']) ? (string) $raw['phone_number'] : null,
+            address: isset($raw['address']) ? (string) $raw['address'] : null,
         );
     }
 }

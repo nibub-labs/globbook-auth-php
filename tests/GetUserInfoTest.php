@@ -65,6 +65,39 @@ final class GetUserInfoTest extends TestCase
         self::assertSame('female', $userInfo->gender);
     }
 
+    public function testRestrictedClaimsAreNullWhenOmittedFromResponse(): void
+    {
+        $response = self::fullUserInfoResponse();
+        unset($response['birthdate'], $response['gender']);
+
+        $mockHttp = new MockHttpClient();
+        $mockHttp->willRespondWith(200, json_encode($response, JSON_THROW_ON_ERROR));
+
+        $client = $this->makeClient($mockHttp);
+        $userInfo = $client->getUserInfo('valid-access-token');
+
+        self::assertNull($userInfo->birthdate);
+        self::assertNull($userInfo->gender);
+        self::assertNull($userInfo->phoneNumber);
+        self::assertNull($userInfo->address);
+    }
+
+    public function testRestrictedClaimsArePopulatedWhenGranted(): void
+    {
+        $response = self::fullUserInfoResponse();
+        $response['phone_number'] = '+15551234567';
+        $response['address'] = 'Colombo Sri Lanka';
+
+        $mockHttp = new MockHttpClient();
+        $mockHttp->willRespondWith(200, json_encode($response, JSON_THROW_ON_ERROR));
+
+        $client = $this->makeClient($mockHttp);
+        $userInfo = $client->getUserInfo('valid-access-token');
+
+        self::assertSame('+15551234567', $userInfo->phoneNumber);
+        self::assertSame('Colombo Sri Lanka', $userInfo->address);
+    }
+
     public function testSendsBearerAuthorizationHeaderAndGetMethod(): void
     {
         $mockHttp = new MockHttpClient();

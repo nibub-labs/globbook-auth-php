@@ -21,6 +21,19 @@ final class ConfigTest extends TestCase
         self::assertSame('secret-abc', $config->clientSecret);
         self::assertSame('https://example.com/callback', $config->redirectUrl);
         self::assertSame(Config::DEFAULT_BASE_URL, $config->baseUrl);
+        self::assertSame(10.0, $config->requestTimeoutSeconds);
+    }
+
+    public function testCustomRequestTimeoutIsStored(): void
+    {
+        $config = new Config(
+            clientId: 'client-123',
+            clientSecret: 'secret-abc',
+            redirectUrl: 'https://example.com/callback',
+            requestTimeoutSeconds: 5.0,
+        );
+
+        self::assertSame(5.0, $config->requestTimeoutSeconds);
     }
 
     public function testCustomBaseUrlIsNormalizedByStrippingTrailingSlash(): void

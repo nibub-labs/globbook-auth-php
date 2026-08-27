@@ -2,6 +2,27 @@
 
 All notable changes to this package are documented in this file.
 
+## 1.1.0
+
+- **Fixed**: `UserInfo::$birthdate` and `UserInfo::$gender` are now `?string` instead of `string`,
+  and default to `null`. Globbook's `/api/v2/oauth/userinfo` omits these fields entirely (not as
+  empty strings) unless your app is verified in the Globbook Developer Console and the user
+  granted the matching scope at consent time. If you compared either property to `''`, switch to
+  a `null` check instead.
+- **Added**: `UserInfo::$phoneNumber` and `UserInfo::$address` (`?string`) — restricted claims
+  that were previously unreachable through this SDK entirely.
+- **Added**: `Client::getAuthorizationUrl(array $scopes = [], ?string $state = null)` accepts an
+  optional scopes array (see the new `Globbook\Auth\Scope` constants) to request restricted claims
+  — previously there was no way to request these scopes at all, so `getUserInfo()` could never
+  have returned them regardless of app verification status.
+- **Added**: `getAuthorizationUrl()`'s `$state` argument and `CallbackParams::$state` — optional
+  CSRF protection (RFC 6749 §10.12). Generate an unguessable value, pass it as `$state`, and
+  compare `parseCallbackParams()`'s returned `$state` against it in your callback route before
+  exchanging the code. Entirely opt-in; omitting it changes no other behavior. See the README's
+  "CSRF protection (state)" section.
+- **Added**: `Config::$requestTimeoutSeconds` (default `10.0`) bounds every request made by the
+  *default* Guzzle-backed HTTP stack; ignored if you supply your own PSR-18 client.
+
 ## 1.0.0 - Initial release
 
 - Initial release of the official PHP SDK for "Sign in with Globbook" OAuth 2.0.

@@ -36,4 +36,18 @@ final class ParseCallbackParamsTest extends TestCase
 
         self::assertNull($result->code);
     }
+
+    public function testParsesState(): void
+    {
+        $result = Client::parseCallbackParams(['code' => 'xyz789', 'state' => 'csrf-token-123']);
+
+        self::assertSame('csrf-token-123', $result->state);
+    }
+
+    public function testStateIsNullWhenNotPresent(): void
+    {
+        $result = Client::parseCallbackParams(['code' => 'xyz789']);
+
+        self::assertNull($result->state);
+    }
 }
